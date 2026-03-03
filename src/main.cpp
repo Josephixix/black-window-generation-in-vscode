@@ -3,6 +3,7 @@
 #include <cmath>
 #include <glad/glad.h>
 #include <GLFW/glfw3.h>
+#include <cstdlib>
 using namespace std;
 
 void framebuffer_size_callback(GLFWwindow* window,int width,int height){
@@ -10,28 +11,27 @@ void framebuffer_size_callback(GLFWwindow* window,int width,int height){
 }
 
 void checkShaderCompile(unsigned int shader){
-    int success;
-    char infoLog[512];
+    int success; char info[512];
     glGetShaderiv(shader,GL_COMPILE_STATUS,&success);
-    if(!success){
-        glGetShaderInfoLog(shader,512,NULL,infoLog);
-        cout<<"SHADER ERROR:\n"<<infoLog<<endl;
-    }
+    if(!success){ glGetShaderInfoLog(shader,512,NULL,info); cout<<"SHADER ERROR\n"<<info<<endl;}
 }
 
 void checkProgramLink(unsigned int program){
-    int success;
-    char infoLog[512];
+    int success; char info[512];
     glGetProgramiv(program,GL_LINK_STATUS,&success);
-    if(!success){
-        glGetProgramInfoLog(program,512,NULL,infoLog);
-        cout<<"PROGRAM LINK ERROR:\n"<<infoLog<<endl;
-    }
+    if(!success){ glGetProgramInfoLog(program,512,NULL,info); cout<<"PROGRAM LINK ERROR\n"<<info<<endl;}
 }
 
-vector<float> createCircle(float radius,int segments){
+struct Particle{
+    float x, y;
+    float vx, vy;
+    float life; // remaining life
+    float r, g, b;
+};
+
+vector<float> createCircle(float radius, int segments){
     vector<float> vertices;
-    vertices.push_back(0.0f); vertices.push_back(0.0f); vertices.push_back(0.0f);
+    vertices.push_back(0); vertices.push_back(0); vertices.push_back(0);
     for(int i=0;i<=segments;i++){
         float angle=2.0f*3.1415926f*i/segments;
         vertices.push_back(radius*cos(angle));
@@ -41,52 +41,42 @@ vector<float> createCircle(float radius,int segments){
     return vertices;
 }
 
-struct Particle{
-    float angle;
-    float radius;
-    float speed;
-};
-
 int main(){
     if(!glfwInit()) return -1;
-    glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR,3);
-    glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR,3);
-    glfwWindowHint(GLFW_OPENGL_PROFILE,GLFW_OPENGL_CORE_PROFILE);
-    GLFWwindow* window=glfwCreateWindow(800,800,"Black Hole",NULL,NULL);
+    GLFWwindow* window=glfwCreateWindow(800,800,"Supernova Explosion",NULL,NULL);
     if(!window){ glfwTerminate(); return -1;}
     glfwMakeContextCurrent(window);
     glfwSetFramebufferSizeCallback(window,framebuffer_size_callback);
     if(!gladLoadGLLoader((GLADloadproc)glfwGetProcAddress)) return -1;
 
-    const char* vertexShaderSrc = R"(
+    const char* vs = R"(
         #version 330 core
         layout(location=0) in vec3 aPos;
         uniform vec2 offset;
-        void main(){gl_Position=vec4(aPos.x+offset.x,aPos.y+offset.y,aPos.z,1.0);}
+        void main(){ gl_Position=vec4(aPos.x+offset.x, aPos.y+offset.y, aPos.z, 1.0); }
     )";
-    const char* fragShaderSrc = R"(
+    const char* fs = R"(
         #version 330 core
         out vec4 FragColor;
         uniform vec3 color;
-        void main(){FragColor=vec4(color,1.0);}
+        void main(){ FragColor=vec4(color,1.0); }
     )";
 
-    unsigned int vs=glCreateShader(GL_VERTEX_SHADER);
-    glShaderSource(vs,1,&vertexShaderSrc,NULL); glCompileShader(vs); checkShaderCompile(vs);
-    unsigned int fs=glCreateShader(GL_FRAGMENT_SHADER);
-    glShaderSource(fs,1,&fragShaderSrc,NULL); glCompileShader(fs); checkShaderCompile(fs);
+    unsigned int vShader=glCreateShader(GL_VERTEX_SHADER);
+    glShaderSource(vShader,1,&vs,NULL); glCompileShader(vShader); checkShaderCompile(vShader);
+    unsigned int fShader=glCreateShader(GL_FRAGMENT_SHADER);
+    glShaderSource(fShader,1,&fs,NULL); glCompileShader(fShader); checkShaderCompile(fShader);
 
     unsigned int shaderProgram=glCreateProgram();
-    glAttachShader(shaderProgram,vs); glAttachShader(shaderProgram,fs);
+    glAttachShader(shaderProgram,vShader); glAttachShader(shaderProgram,fShader);
     glLinkProgram(shaderProgram); checkProgramLink(shaderProgram);
-    glDeleteShader(vs); glDeleteShader(fs);
+    glDeleteShader(vShader); glDeleteShader(fShader);
 
-    int segments=60;
+    int segments=20;
     vector<float> circleVertices=createCircle(1.0f,segments);
 
     unsigned int VAO,VBO;
-    glGenVertexArrays(1,&VAO);
-    glGenBuffers(1,&VBO);
+    glGenVertexArrays(1,&VAO); glGenBuffers(1,&VBO);
     glBindVertexArray(VAO);
     glBindBuffer(GL_ARRAY_BUFFER,VBO);
     glBufferData(GL_ARRAY_BUFFER,circleVertices.size()*sizeof(float),circleVertices.data(),GL_DYNAMIC_DRAW);
@@ -96,11 +86,11 @@ int main(){
 
     // --- Create particles ---
     vector<Particle> particles;
-    for(int i=0;i<200;i++){
-        float r=0.25f+((rand()%100)/100.0f)*0.3f;
-        float a=((rand()%1000)/1000.0f)*2.0f*3.1415f;
-        float s=0.5f+((rand()%100)/100.0f)*1.0f;
-        particles.push_back({a,r,s});
+    int particleCount=300;
+    for(int i=0;i<particleCount;i++){
+        float angle=((rand()%1000)/1000.0f)*2.0f*3.1415f;
+        float speed=0.3f + ((rand()%100)/100.0f)*0.3f;
+        particles.push_back({0.0f,0.0f, cos(angle)*speed, sin(angle)*speed, 1.0f, 1.0f, 0.8f, 0.2f});
     }
 
     float lastTime=glfwGetTime();
@@ -118,45 +108,20 @@ int main(){
         int colorLoc=glGetUniformLocation(shaderProgram,"color");
         int offsetLoc=glGetUniformLocation(shaderProgram,"offset");
 
-        // --- Draw black hole glow (layers) ---
-        for(int i=5;i>0;i--){
-            float scale=0.12f+i*0.02f;
-            vector<float> scaled;
-            for(size_t k=0;k<circleVertices.size();k+=3){
-                scaled.push_back(circleVertices[k]*scale);
-                scaled.push_back(circleVertices[k+1]*scale);
-                scaled.push_back(circleVertices[k+2]);
-            }
-            glBindBuffer(GL_ARRAY_BUFFER,VBO);
-            glBufferSubData(GL_ARRAY_BUFFER,0,scaled.size()*sizeof(float),scaled.data());
-            float intensity=0.2f+0.15f*i;
-            glUniform3f(colorLoc,intensity,intensity*0.1f,0.0f);
-            glUniform2f(offsetLoc,0.0f,0.0f);
-            glDrawArrays(GL_TRIANGLE_FAN,0,segments+2);
-        }
-
-        // --- Draw black hole center ---
-        vector<float> bhVertices;
-        float bhScale=0.12f;
-        for(size_t i=0;i<circleVertices.size();i+=3){
-            bhVertices.push_back(circleVertices[i]*bhScale);
-            bhVertices.push_back(circleVertices[i+1]*bhScale);
-            bhVertices.push_back(circleVertices[i+2]);
-        }
-        glBindBuffer(GL_ARRAY_BUFFER,VBO);
-        glBufferSubData(GL_ARRAY_BUFFER,0,bhVertices.size()*sizeof(float),bhVertices.data());
-        glUniform3f(colorLoc,0.0f,0.0f,0.0f);
-        glUniform2f(offsetLoc,0.0f,0.0f);
-        glDrawArrays(GL_TRIANGLE_FAN,0,segments+2);
-
-        // --- Draw particles (accretion disk) ---
         for(auto &p:particles){
-            p.angle += 1.5f*dt; // spin faster
-            p.radius -= 0.2f*dt; // spiral inward
-            if(p.radius<0.12f) p.radius=0.55f; // reset to outer edge
+            p.x += p.vx*dt;
+            p.y += p.vy*dt;
+            p.life -= dt*0.5f;
 
+            if(p.life<0){ 
+                // reset particle
+                float angle=((rand()%1000)/1000.0f)*2.0f*3.1415f;
+                float speed=0.3f + ((rand()%100)/100.0f)*0.3f;
+                p.x=0; p.y=0; p.vx=cos(angle)*speed; p.vy=sin(angle)*speed; p.life=1.0f;
+            }
+
+            float ps=0.02f*(0.5f+p.life);
             vector<float> scaled;
-            float ps=0.015f;
             for(size_t k=0;k<circleVertices.size();k+=3){
                 scaled.push_back(circleVertices[k]*ps);
                 scaled.push_back(circleVertices[k+1]*ps);
@@ -165,13 +130,11 @@ int main(){
             glBindBuffer(GL_ARRAY_BUFFER,VBO);
             glBufferSubData(GL_ARRAY_BUFFER,0,scaled.size()*sizeof(float),scaled.data());
 
-            float x=p.radius*cos(p.angle);
-            float y=p.radius*sin(p.angle);
-
-            // gradient color: brighter near center
-            float intensity=1.0f-(p.radius-0.12f)/0.43f;
-            glUniform3f(colorLoc,1.0f,intensity*0.5f,0.0f);
-            glUniform2f(offsetLoc,x,y);
+            float r=1.0f;
+            float g=0.5f + 0.5f*p.life;
+            float b=0.0f;
+            glUniform3f(colorLoc,r,g,b);
+            glUniform2f(offsetLoc,p.x,p.y);
             glDrawArrays(GL_TRIANGLE_FAN,0,segments+2);
         }
 
